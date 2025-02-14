@@ -1,4 +1,4 @@
-Microsoft (R) Macro Assembler (x64) Version 14.41.34123.0   02/12/25 11:04:36
+Microsoft (R) Macro Assembler (x64) Version 14.41.34123.0   02/14/25 15:39:06
 debug_check.asm						     Page 1 - 1
 
 
@@ -36,24 +36,6 @@ debug_check.asm						     Page 1 - 1
  0000002D  5B			    pop rbx                         
  0000002E			DetectHardwareBreakpointsASM ENDP
 
-
-				; DetectDebuggerTrapFlag PROC
-				;     pushfq                      ; Push RFLAGS to stack
-				;     or qword ptr [rsp], 0x100   ; Set Trap Flag (TF) in RFLAGS
-				;     popfq                       ; Restore modified RFLAGS
-
-				;     nop                         ; Executes normally if no debugger
-				;     pushfq                      ; Push flags to check if TF triggered
-				;     pop rax                     ; Retrieve flags
-
-				;     test rax, 0x100             ; Check if Trap Flag was set
-				;     setnz al                    ; AL = 1 if debugger is present
-				;     movzx rax, al               ; Zero-extend AL to RAX for return
-
-				;     ret
-				; DetectDebuggerTrapFlag ENDP
-
-
  0000002E			OverwriteDebugPort PROC
  0000002E  65: 48/ 8B 04 25	    mov     rax, gs:[60h]               ; Get PEB base address
 	   00000060
@@ -73,7 +55,54 @@ debug_check.asm						     Page 1 - 1
  0000005B			CrashOnDebuggerAttach ENDP
 
 				END
-Microsoft (R) Macro Assembler (x64) Version 14.41.34123.0   02/12/25 11:04:36
+
+				; Just storing some code which acts like garbage
+				GarbageCodeLabel:
+				    db  0xCC, 0x90, 0x90, 0xCC          ; INT 3, NOP, NOP, INT 3
+				    db  0x9C                            ; PUSHFD (push EFLAGS register)
+				    db  0xB8, 0x01, 0x00, 0x00, 0x00    ; MOV EAX, 1
+				    db  0xB8, 0x02, 0x00, 0x00, 0x00    ; MOV EAX, 2
+				    db  0x8B, 0xD                       ; MOV EDX, EAX
+				    db  0x83, 0xC2, 0x01                ; ADD EDX, 1
+				    db  0x83, 0xEA, 0x01                ; SUB EDX, 1
+				    db  0x9D                            ; POPFQ (pop RFLAGS register)
+				    db  0x48, 0x89, 0xE5                ; MOV RBP, RSP (set up stack frame)
+				    db  0x48, 0x8B, 0x45, 0xF8          ; MOV RAX, [RBP-8] (load RDI)
+				    db  0x48, 0x8B, 0x4D, 0xF0          ; MOV RCX, [RBP-16] (load RSI)
+				    db  0x48, 0x01, 0xC8                ; ADD RAX, RCX (add RDI and RSI)
+				    db  0x48, 0x89, 0x45, 0xF8          ; MOV [RBP-8], RAX (store result)
+				    db  0x48, 0x8B, 0x45, 0xF8          ; MOV RAX, [RBP-8] (load result)
+				    db  0x48, 0x83, 0xC4, 0x10          ; ADD RSP, 16 (deallocate stack space)
+				    db  0x5D                            ; POP RBP (restore RBP)
+				    db  0xCC                            ; INT 3 (breakpoint)
+				    db  0x90                            ; NOP (no operation)
+				    db  0xEB, 0xFE                      ; JMP short -2 (infinite loop)
+				    db  0xC3                             ; RET (return from function)
+				    db  0x48, 0x83, 0xEC, 0x10          ; SUB RSP, 16 (allocate stack space)
+				    db  0x48, 0x89, 0x7D, 0xF8          ; MOV [RBP-8], RDI (save RDI)
+				    db  0x48, 0x89, 0x75, 0xF0          ; MOV [RBP-16], RSI (save RSI)
+				    db  0x48, 0x8B, 0x45, 0xF8          ; MOV RAX, [RBP-8] (load RDI)
+				    db  0x48, 0x8B, 0x4D, 0xF0          ; MOV RCX, [RBP-16] (load RSI)
+				    db  0x48, 0x01, 0xC8                ; ADD RAX, RCX (add RDI and RSI)
+				    db  0x48, 0x89, 0x45, 0xF8          ; MOV [RBP-8], RAX (store result)
+				    db  0x48, 0x8B, 0x45, 0xF8          ; MOV RAX, [RBP-8] (load result)
+				    db  0x48, 0x83, 0xC4, 0x10          ; ADD RSP, 16 (deallocate stack space)
+				    db  0x5D                            ; POP RBP (restore RBP)
+				    db  0xCC                            ; INT 3 (breakpoint)
+				    db  0x90                            ; NOP (no operation)
+				    db  0xEB, 0xFE                      ; JMP short -2 (infinite loop)
+				    db  0xC3                            ; RET (return from function)
+				    db  0x9C                            ; PUSHFD (push EFLAGS register)
+				    db  0xB8, 0x03, 0x00, 0x00, 0x00    ; MOV EAX, 3
+				    db  0xBB, 0x04, 0x00, 0x00, 0x00    ; MOV EBX, 4
+				    db  0x01, 0xD8                      ; ADD EAX, EBX
+				    db  0x83, 0xC0, 0x01                ; ADD EAX, 1
+				    db  0x83, 0xE8, 0x01                ; SUB EAX, 1
+				    db  0x9D                            ; POPFD (pop EFLAGS register)
+				    db  0xEB, 0xFE                      ; JMP short -2 (infinite loop)
+				    db  0xC3                            ; RET (return from function)
+				END
+Microsoft (R) Macro Assembler (x64) Version 14.41.34123.0   02/14/25 15:39:06
 debug_check.asm						     Symbols 2 - 1
 
 
