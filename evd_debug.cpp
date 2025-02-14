@@ -1,13 +1,9 @@
-//cl /EHsc .\evd_debug.cpp debug_check.obj /link user32.lib Advapi32.lib /OUT:evd_debug.exe
-
 #include <windows.h>
 #include <iostream>
-#include <tlhelp32.h>
 #include <psapi.h>
 #include <thread>
-#include <winternl.h>       // header for PEB
-typedef struct _PEB* PPEB;  // Define PPEB type
-
+#include <mutex>
+#include <condition_variable>
 ///////////////////////////////////////////////////////////////////////////////
 extern "C" BOOL IsDebuggerPresentASM();
 void CrashIfDebugged();
@@ -19,7 +15,10 @@ void CrashIfDebugged();
 #define Use_CrashIfDebugged 1
 ///////////////////////////////////////////////////////////////////////////////
 volatile bool exitProgram = false;
-
+volatile int num = 10;
+std::mutex numMutex,mtx; // Mutex for synchronizing access to 'num'
+std::condition_variable cv;
+bool mainTurn = true; // Control alternation (true = main, false = thread)
 ///////////////////////////////////////////////////////////////////////////////
 
 bool CheckHeapPatterns()
@@ -81,27 +80,27 @@ bool DetectHardwareBreakpoints()
 
 void DebuggingThread()
 {
-    while(!exitProgram)
+    //std::cout << "inside thread " << std::endl;
+    while (!exitProgram)
     {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [] { return !mainTurn; }); // Wait until it's thread's turn
+
+        bool debuggerDetected = false;
+
         #if Use_DetectHardwareBreakpoints
             if (DetectHardwareBreakpoints())
             {
                 std::cout << "Debugger detected! from DetectHardwareBreakpoints" << std::endl;
-                #if Use_CrashIfDebugged
-                    CrashIfDebugged();
-                #endif
-                exitProgram = true;
+                debuggerDetected = true;
             }
         #endif
 
         #if Use_IsDebuggerPresentASM
             if (IsDebuggerPresentASM())
             {
-                std::cout << "Debugger detected! from Use_IsDebuggerPresentASM" << std::endl;
-                #if Use_CrashIfDebugged
-                    CrashIfDebugged();
-                #endif
-                exitProgram = true;
+                std::cout << "Debugger detected! from IsDebuggerPresentASM" << std::endl;
+                debuggerDetected = true;
             }
         #endif
 
@@ -109,12 +108,25 @@ void DebuggingThread()
             if(CheckHeapPatterns())
             {
                 std::cout << "Debugger detected! from CheckHeapPatterns" << std::endl;
-                #if Use_CrashIfDebugged
-                    CrashIfDebugged();
-                #endif
-                exitProgram = true;
+                debuggerDetected = true;
             }
         #endif
+
+        //std::lock_guard<std::mutex> lock(numMutex); // Lock the mutex before modifying 'num'
+        if (debuggerDetected)
+        {
+            num *= 3;
+            exitProgram = true;
+            #if Use_CrashIfDebugged
+                CrashIfDebugged();
+            #endif
+        }
+        else num *= 12;
+
+        // Toggle flag & notify main
+        mainTurn = true;
+        lock.unlock();
+        cv.notify_one();
 
         Sleep(1000);
     }
@@ -122,13 +134,38 @@ void DebuggingThread()
 
 int main()
 {
-
     std::thread debugThread(DebuggingThread);
     int i=0;
+
     while (!exitProgram)
     {
-        std::cout << "Main Thread: " << i++ << std::endl;
-        Sleep(1000);
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [] { return mainTurn; });
+
+        std::cout << "Main Thread: " << i++ << " Number: " << num << std::endl;
+        
+        {
+        std::lock_guard<std::mutex> lock(numMutex);
+        if(num == 10 || num == 120)
+        {
+            
+            /*
+
+                            code goes here :)
+
+
+
+            */
+            num = 10;
+        }
+        else exitProgram = true; 
+        }
+        
+        mainTurn = false;
+        lock.unlock();
+        cv.notify_one();
+
+
     }
     
     debugThread.join();
@@ -201,10 +238,11 @@ void CrashIfDebugged()
     
     VirtualProtect((LPVOID)CrashIfDebugged, sizeof(patchBytes), PAGE_EXECUTE_READWRITE, &oldProtect);
 
-
     memcpy((LPVOID)CrashIfDebugged, patchBytes, sizeof(patchBytes));
     VirtualProtect((LPVOID)CrashIfDebugged, sizeof(patchBytes), oldProtect, &oldProtect);
     std::cout << "function changed" << std::endl;
 
-
+    std::lock_guard<std::mutex> lock(numMutex); // Lock the mutex before modifying 'num'
+    num *= 4;
+    //std::cout << "Num function: " << num << std::endl;
 }
